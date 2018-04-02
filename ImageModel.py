@@ -71,27 +71,31 @@ class ImageModel(object):
                                self.resize_image.shape[-1], 64)
         conv_1_2 = self.conv2d(conv_1_1, "conv_1_2", 64, 64)
         maxpool_1 = self.maxpool(conv_1_2, "maxpool_1")
-        dropout_1 = tf.nn.dropout(maxpool_1, keep_prob=0.5)
+        dropout_1 = tf.nn.dropout(maxpool_1, keep_prob=0.5, name="dropout_1")
+        print("Layer 1 : " + str(dropout_1.shape))
 
         # Layer 2
         conv_2_1 = self.conv2d(dropout_1, "conv_2_1", 64, 128)
         conv_2_2 = self.conv2d(conv_2_1, "conv_2_2", 128, 128)
         maxpool_2 = self.maxpool(conv_2_2, "maxpool_2")
-        dropout_2 = tf.nn.dropout(maxpool_2, keep_prob=0.5)
-
+        dropout_2 = tf.nn.dropout(maxpool_2, keep_prob=0.5, name="dropout_2")
+        print("Layer 2 : " + str(dropout_2.shape))
+        
         # Layer 3
         conv_3_1 = self.conv2d(dropout_2, "conv_3_1", 128, 256)
         conv_3_2 = self.conv2d(conv_3_1, "conv_3_2", 256, 256)
         conv_3_3 = self.conv2d(conv_3_2, "conv_3_3", 256, 256)
         maxpool_3 = self.maxpool(conv_3_3, "maxpool_3")
-        dropout_3 = tf.nn.dropout(maxpool_3, keep_prob=0.5)
+        dropout_3 = tf.nn.dropout(maxpool_3, keep_prob=0.5, name="dropout_3")
+        print("Layer 3 : " + str(dropout_3.shape))
 
         # Layer 4
         conv_4_1 = self.conv2d(dropout_3, "conv_4_1", 256, 512)
         conv_4_2 = self.conv2d(conv_4_1, "conv_4_2", 512, 512)
         conv_4_3 = self.conv2d(conv_4_2, "conv_4_3", 512, 512)
         maxpool_4 = self.maxpool(conv_4_3, "maxpool_4")
-        dropout_4 = tf.nn.dropout(maxpool_4, keep_prob=0.5)
+        dropout_4 = tf.nn.dropout(maxpool_4, keep_prob=0.5, name="dropout_4")
+        print("Layer 4 : " + str(dropout_4.shape))
 
         # Layer 5
         conv_5_1 = self.conv2d(dropout_4, "conv_5_1", 512, 512)
@@ -99,12 +103,18 @@ class ImageModel(object):
         conv_5_3 = self.conv2d(conv_5_2, "conv_5_3", 512, 512)
         maxpool_5 = self.maxpool(conv_5_3, "maxpool_5")
         dropout_5 = tf.nn.dropout(maxpool_5, keep_prob=0.5, name="dropout_5")
+        print("Layer 5 : " + str(dropout_5.shape))
 
-        dense_1 = self.dense(dropout_5, "dense_1", 4096)
+        flatten = self.flatten(dropout_5)
+        print("Flatten : " + str(flatten.shape))
+
+        dense_1 = self.dense(flatten, "dense_1", 4096)
         dense_2 = self.dense(dense_1, "dense_2", 4096)
         logits = tf.nn.dropout(dense_2, keep_prob=0.5, name="logits")
+        print("Dense : " + str(logits.shape))
 
         predictions = tf.nn.softmax(logits=logits)
+        print("Softmax : " + str(predictions.shape))
 
         return logits, predictions
 
@@ -118,10 +128,10 @@ class ImageModel(object):
         with tf.name_scope("optimizer"):
             return tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss)
 
-    def accuracy(self):
+    def accuracy(self, labels, predictions):
         with tf.name_scope("accuracy"):
             correct_predictions = tf.equal(
-                self.predictions, tf.argmax(self.labels, axis=-1))
+                predictions, tf.argmax(labels, axis=-1))
             return tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
     def train_model(self, batches):
