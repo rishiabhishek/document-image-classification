@@ -78,7 +78,7 @@ class ImageModel(object):
         print("Layer 0 : " + str(dropout_0.shape))
 
         # Layer 1
-        conv_1_1 = self.conv2d(dropout_0, "conv_1_1",20, 64)
+        conv_1_1 = self.conv2d(dropout_0, "conv_1_1", 20, 64)
         conv_1_2 = self.conv2d(conv_1_1, "conv_1_2", 64, 64)
         maxpool_1 = self.maxpool(conv_1_2, "maxpool_1")
         dropout_1 = tf.nn.dropout(maxpool_1, keep_prob=0.5, name="dropout_1")
@@ -195,7 +195,7 @@ class ImageModel(object):
                         summary_str = sess.run(summary, feed_dict=feed_dict)
                         summary_writer.add_summary(summary_str, i)
 
-                        if (i + 1) % 50 == 0:
+                        if batch_count % 50 == 0:
                             checkpoint_file = os.path.join(logdir, 'checkpoint')
                             saver.save(sess, checkpoint_file, global_step=i)
                             print('Saved checkpoint')
