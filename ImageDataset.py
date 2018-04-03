@@ -45,33 +45,37 @@ class ImageDataSet(object):
         elif ("val" in argv):
             label_path = os.path.join(self.base_path, "labels/val.txt")
         else:
-            label_path = os.path.join(self.base_path, "labels/short_train.txt")
+            label_path = os.path.join(self.base_path, "labels/train.txt")
         image_dict = self.read_label_files(label_path)
         images = []
         labels = []
         i = 0
+
         for path, label in image_dict.items():
             if int(label) in self.label2idx:
                 image = self.read_image(path)
-                print(path)
-                print(str(i))
-                images.append(image)
+                # print(path)
+                # print(str(i))
+                images.append(cv2.resize(image, (1000, 754)))
                 index = self.label2idx[int(label)]
                 labels.append(self.label_onehot[index])
                 i += 1
                 if i != 0 and (i % batch_size == 0):
-                    yield images, labels
+                    yield np.array(images), np.array(labels)
 
 
 def main():
-    imageDataset = ImageDataSet("/Volumes/My Passport/abhishek/dataset")
-    batches = imageDataset.build_dataset(50, "train")
+    imageDataset = ImageDataSet(
+        "/Volumes/My Passport/abhishek/Datasets/Image Dataset/rvl-cdip/dataset")
+    batches = imageDataset.build_dataset(20, "train")
 
     for batch in batches:
         images = batch[0]
         labels = batch[1]
-        for image in images:
-            print(image.dtype)
+        print(images.shape)
+        print(labels.shape)
+        # for image in images:
+        #     print(image.shape)
 
 
 if __name__ == "__main__":

@@ -1,26 +1,26 @@
 import tensorflow as tf
+from datetime import datetime
+import os
 
 
 class ImageModel(object):
-    def __init__(self, label_len, image_height, image_width):
-        self.model = None
+    def __init__(self, num_labels, image_height, image_width):
         # Inputs and Labels
-        self.num_label = label_len
-
-        # Graph Initialize
-        self.train_graph = tf.Graph()
+        self.num_labels = num_labels
 
         self.image_input = tf.placeholder(
             shape=(None, None, None, 3), dtype=tf.float32, name="image_input")
         print("Image Input Placeholder : " + str(self.image_input.shape))
 
         self.labels = tf.placeholder(
-            shape=(None, 8), dtype=tf.int32, name="labels")
+            shape=(None, self.num_labels), dtype=tf.int32, name="labels")
         print("Image labels Placeholder : " + str(self.labels.shape))
 
         self.resize_image = tf.image.resize_image_with_crop_or_pad(
             image=self.image_input, target_height=image_height, target_width=image_width)
         print("Image Resize : " + str(self.resize_image.shape))
+
+
 
     def conv2d(self, input, scope, in_channels, out_channels, alpha=0.3):
         with tf.variable_scope(scope):
@@ -37,16 +37,20 @@ class ImageModel(object):
 
             lrelu = tf.nn.leaky_relu(bias, alpha=alpha, name="lrelu")
 
+            tf.summary.histogram('lrelu', lrelu)
             return lrelu
 
     def maxpool(self, input, scope):
         with tf.variable_scope(scope):
-            return tf.nn.max_pool(name="maxpool", value=input, ksize=(1, 2, 2, 1), strides=(1, 2, 2, 1), padding="SAME")
+            maxpool = tf.nn.max_pool(name="maxpool", value=input, ksize=(1, 2, 2, 1), strides=(1, 2, 2, 1), padding="SAME")
+            tf.summary.histogram('maxpool', maxpool)
+            return maxpool
 
     def flatten(self, tensor):
         output_shape = tensor.shape[1] * tensor.shape[2] * tensor.shape[3]
         flatten = tf.reshape(
             tensor=tensor, shape=[-1, output_shape], name="flatten")
+        tf.summary.histogram('flatten', flatten)
         return flatten
 
     def dense(self, tensor, name, output_size):
@@ -61,7 +65,7 @@ class ImageModel(object):
                                      name="matmul"), bias, name="add_bias")
 
             dropout = tf.nn.dropout(dense, keep_prob=0.5)
-
+            tf.summary.histogram('dropout', dropout)
             return dropout
 
     # VGG16 Architecture
@@ -80,7 +84,7 @@ class ImageModel(object):
         maxpool_2 = self.maxpool(conv_2_2, "maxpool_2")
         dropout_2 = tf.nn.dropout(maxpool_2, keep_prob=0.5, name="dropout_2")
         print("Layer 2 : " + str(dropout_2.shape))
-        
+
         # Layer 3
         conv_3_1 = self.conv2d(dropout_2, "conv_3_1", 128, 256)
         conv_3_2 = self.conv2d(conv_3_1, "conv_3_2", 256, 256)
@@ -109,46 +113,79 @@ class ImageModel(object):
         print("Flatten : " + str(flatten.shape))
 
         dense_1 = self.dense(flatten, "dense_1", 4096)
-        dense_2 = self.dense(dense_1, "dense_2", 4096)
+        dense_2 = self.dense(dense_1, "dense_2", self.num_labels)
         logits = tf.nn.dropout(dense_2, keep_prob=0.5, name="logits")
         print("Dense : " + str(logits.shape))
 
         predictions = tf.nn.softmax(logits=logits)
         print("Softmax : " + str(predictions.shape))
 
+        tf.summary.histogram('predictions', predictions)
         return logits, predictions
 
-    def loss(self, labels, logits):
+    def loss(self, logits):
         with tf.name_scope("loss"):
-            cross_entropy = tf.nn.softmax_cross_entropy_with_logits(
-                labels=labels, logits=logits)
-            return tf.reduce_mean(cross_entropy)
+            loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.labels, logits=logits))
+            tf.summary.scalar('loss', loss)
+            return loss
 
-    def optimizer(self, loss, learning_rate=0.001):
+    def optimizer(self, loss):
         with tf.name_scope("optimizer"):
-            return tf.train.GradientDescentOptimizer(learning_rate=learning_rate).minimize(loss)
+            opt = tf.train.AdamOptimizer().minimize(loss)
+            return opt
 
-    def accuracy(self, labels, predictions):
+    def accuracy(self, predictions):
         with tf.name_scope("accuracy"):
-            correct_predictions = tf.equal(
-                predictions, tf.argmax(labels, axis=-1))
-            return tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
+            correct_predictions = tf.equal(tf.argmax(predictions, axis=-1), tf.argmax(self.labels, axis=-1))
+            acc = tf.reduce_mean(tf.cast(correct_predictions, "float32"), name="accuracy")
 
-    def train_model(self, batches):
-        loss_ = self.loss()
+            tf.summary.scalar('accuracy', acc)
+            return acc
+
+    def train_model(self, imageDataset, batch_size=20, epochs=20):
+        logits, predictions = self.build_model()
+        loss_ = self.loss(logits)
         optimizer_ = self.optimizer(loss_)
-        accuracy_ = self.accuracy()
+        accuracy_ = self.accuracy(predictions)
 
-        init = tf.initialize_all_variables()
-        with tf.Session(graph=self.train_graph) as sess:
+        logdir = "/Users/abhishekpradhan/OtherWorkspace/document-image-classification/log_dir" + '/' + datetime.now().strftime('%Y%m%d-%H%M%S') + '/'
+
+        # Operation merging summary data for TensorBoard
+        summary = tf.summary.merge_all()
+
+        # Define saver to save model state at checkpoints
+        saver = tf.train.Saver()
+
+        init = tf.global_variables_initializer()
+        with tf.Session() as sess:
             sess.run(init)
+            summary_writer = tf.summary.FileWriter(logdir, sess.graph)
+            for i in range(epochs):
+                print("Epochs : " + str(i))
 
-            for batch in batches:
-                images = batch[0]
-                labels = batch[1]
-                feed_dict = {self.image_input: images, self.labels: labels}
-                loss, opt, acc = sess.run(
-                    [loss_, optimizer_, accuracy_], feed_dict=feed_dict)
+                batch_count = 0
+                hasNext = True
+                while hasNext:
+                    batches = imageDataset.build_dataset(batch_size, "train")
+                    if batches:
+                        batch = next(batches)
+                        images = batch[0]
+                        labels = batch[1]
+                        feed_dict = {self.image_input: images, self.labels: labels}
+                        batch_count += 1
+                        _, loss, acc = sess.run([optimizer_, loss_, accuracy_], feed_dict=feed_dict)
+                        print("Batch : {0} \t  ----  Loss : {1:.2f} \t ---- Accuracy : {2:.2f}".format(batch_count, loss, acc))
+
+                        # Saving Summary
+                        summary_str = sess.run(summary, feed_dict=feed_dict)
+                        summary_writer.add_summary(summary_str, i)
+
+                        if (i + 1) % 1000 == 0:
+                            checkpoint_file = os.path.join(FLAGS.train_dir, 'checkpoint')
+                            saver.save(sess, checkpoint_file, global_step=i)
+                            print('Saved checkpoint')
+                    else:
+                        hasNext = False
 
 
 def main():
