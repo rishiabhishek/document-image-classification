@@ -56,7 +56,7 @@ class ImageDataSet(object):
                 image = self.read_image(path)
                 # print(path)
                 # print(str(i))
-                images.append(cv2.resize(image, (1000, 754)))
+                images.append(cv2.resize(image, (224, 224)))
                 index = self.label2idx[int(label)]
                 labels.append(self.label_onehot[index])
                 i += 1

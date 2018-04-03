@@ -9,18 +9,16 @@ class ImageModel(object):
         self.num_labels = num_labels
 
         self.image_input = tf.placeholder(
-            shape=(None, None, None, 3), dtype=tf.float32, name="image_input")
+            shape=(None, image_height, image_width, 3), dtype=tf.float32, name="image_input")
         print("Image Input Placeholder : " + str(self.image_input.shape))
 
         self.labels = tf.placeholder(
             shape=(None, self.num_labels), dtype=tf.int32, name="labels")
         print("Image labels Placeholder : " + str(self.labels.shape))
 
-        self.resize_image = tf.image.resize_image_with_crop_or_pad(
-            image=self.image_input, target_height=image_height, target_width=image_width)
-        print("Image Resize : " + str(self.resize_image.shape))
-
-
+        # self.resize_image = tf.image.resize_image_with_crop_or_pad(
+        #     image=self.image_input, target_height=image_height, target_width=image_width)
+        # print("Image Resize : " + str(self.resize_image.shape))
 
     def conv2d(self, input, scope, in_channels, out_channels, alpha=0.3):
         with tf.variable_scope(scope):
@@ -42,7 +40,8 @@ class ImageModel(object):
 
     def maxpool(self, input, scope):
         with tf.variable_scope(scope):
-            maxpool = tf.nn.max_pool(name="maxpool", value=input, ksize=(1, 2, 2, 1), strides=(1, 2, 2, 1), padding="SAME")
+            maxpool = tf.nn.max_pool(name="maxpool", value=input, ksize=(1, 2, 2, 1), strides=(1, 2, 2, 1),
+                                     padding="SAME")
             tf.summary.histogram('maxpool', maxpool)
             return maxpool
 
@@ -68,11 +67,18 @@ class ImageModel(object):
             tf.summary.histogram('dropout', dropout)
             return dropout
 
-    # VGG16 Architecture
     def build_model(self):
+
+        # Layer 0
+        conv_0_1 = self.conv2d(self.image_input, "conv_0_1",
+                               self.image_input.shape[-1], 20)
+        conv_0_2 = self.conv2d(conv_0_1, "conv_0_2", 20, 20)
+        maxpool_0 = self.maxpool(conv_0_2, "maxpool_0")
+        dropout_0 = tf.nn.dropout(maxpool_0, keep_prob=0.5, name="dropout_0")
+        print("Layer 0 : " + str(dropout_0.shape))
+
         # Layer 1
-        conv_1_1 = self.conv2d(self.resize_image, "conv_1_1",
-                               self.resize_image.shape[-1], 64)
+        conv_1_1 = self.conv2d(dropout_0, "conv_1_1",20, 64)
         conv_1_2 = self.conv2d(conv_1_1, "conv_1_2", 64, 64)
         maxpool_1 = self.maxpool(conv_1_2, "maxpool_1")
         dropout_1 = tf.nn.dropout(maxpool_1, keep_prob=0.5, name="dropout_1")
@@ -129,10 +135,16 @@ class ImageModel(object):
             tf.summary.scalar('loss', loss)
             return loss
 
-    def optimizer(self, loss):
+    def optimizer(self, cost, learning_rate=0.00001):
         with tf.name_scope("optimizer"):
-            opt = tf.train.AdamOptimizer().minimize(loss)
-            return opt
+            # opt = tf.train.AdamOptimizer().minimize(loss)
+
+            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+            gvs = optimizer.compute_gradients(cost)
+            capped_gvs = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
+            train_op = optimizer.apply_gradients(capped_gvs)
+
+            return train_op
 
     def accuracy(self, predictions):
         with tf.name_scope("accuracy"):
@@ -148,7 +160,8 @@ class ImageModel(object):
         optimizer_ = self.optimizer(loss_)
         accuracy_ = self.accuracy(predictions)
 
-        logdir = "/Users/abhishekpradhan/OtherWorkspace/document-image-classification/log_dir" + '/' + datetime.now().strftime('%Y%m%d-%H%M%S') + '/'
+        logdir = "/Volumes/My Passport/abhishek/Datasets/Image Dataset/rvl-cdip/log_dir" + '/' + datetime.now().strftime(
+            '%Y%m%d-%H%M%S') + '/'
 
         # Operation merging summary data for TensorBoard
         summary = tf.summary.merge_all()
@@ -174,14 +187,16 @@ class ImageModel(object):
                         feed_dict = {self.image_input: images, self.labels: labels}
                         batch_count += 1
                         _, loss, acc = sess.run([optimizer_, loss_, accuracy_], feed_dict=feed_dict)
-                        print("Batch : {0} \t  ----  Loss : {1:.2f} \t ---- Accuracy : {2:.2f}".format(batch_count, loss, acc))
+                        print(
+                            "Batch : {0} \t  ----  Loss : {1:.2f} \t ---- Accuracy : {2:.2f}".format(batch_count, loss,
+                                                                                                     acc))
 
                         # Saving Summary
                         summary_str = sess.run(summary, feed_dict=feed_dict)
                         summary_writer.add_summary(summary_str, i)
 
-                        if (i + 1) % 1000 == 0:
-                            checkpoint_file = os.path.join(FLAGS.train_dir, 'checkpoint')
+                        if (i + 1) % 50 == 0:
+                            checkpoint_file = os.path.join(logdir, 'checkpoint')
                             saver.save(sess, checkpoint_file, global_step=i)
                             print('Saved checkpoint')
                     else:
